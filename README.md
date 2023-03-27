@@ -13,3 +13,15 @@ Then run the benchmarking script (requires `wrk` to be installed).
 ```shell
 $ ./bench.sh
 ```
+
+This returns static files in three ways:
+
+- /serve_dir: Returns files using tower's `ServeDir` middleware.
+- /read: Returns contents by reading it all at once using `tokio::fs::read`.
+- /stream: Returns file contents in a streaming response, replicating the core behavior of `ServeDir`.
+
+On my machine, `/read` returns in about 0.5ms on average, whereas the others take about 40-50ms.
+
+## Experiments
+
+- Tried setting the capacity to the length of the file, instead of to 64kB.
