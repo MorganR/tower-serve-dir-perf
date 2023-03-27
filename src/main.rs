@@ -2,10 +2,23 @@ use std::{
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
+    pin::{pin, Pin},
+    task::{Context, Poll},
 };
 
-use axum::{extract::Path, response::IntoResponse, routing::get, Router, Server};
-use hyper::StatusCode;
+use axum::{
+    body::Bytes,
+    extract::Path,
+    response::{IntoResponse, Response},
+    routing::get,
+    Router, Server,
+};
+use futures_core::stream::Stream;
+use http_body::Body;
+use hyper::{HeaderMap, StatusCode};
+use pin_project::pin_project;
+use tokio::{fs::File, io};
+use tokio_util::io::ReaderStream;
 use tower_http::services::ServeDir;
 
 async fn hello_world() -> impl IntoResponse {
@@ -25,11 +38,52 @@ async fn read_file(Path(relative_path): Path<String>) -> Result<impl IntoRespons
     }
 }
 
+/// A streaming body response, based on AsyncReadBody from tower.
+#[pin_project]
+struct BodyStream(#[pin] pub ReaderStream<File>);
+
+impl Body for BodyStream {
+    type Data = Bytes;
+    type Error = io::Error;
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        self.project().0.poll_next(cx)
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+        Poll::Ready(Ok(None))
+    }
+}
+
+/// Opens the file with tokio, then uses ReaderStream from tokio-util to build the response.
+///
+/// Returns NOT_FOUND on any error.
+async fn stream_to_body(
+    Path(relative_path): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut path = PathBuf::from("static");
+    path.push(&relative_path);
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|_err| StatusCode::NOT_FOUND)?;
+    let body = BodyStream(ReaderStream::with_capacity(file, 64 << 10));
+    Response::builder()
+        .body(body)
+        .map_err(|_err| StatusCode::NOT_FOUND)
+}
+
 fn create_router() -> Router {
     Router::new()
         .route("/hello", get(hello_world))
         .nest_service("/serve_dir", ServeDir::new("static"))
         .route("/read/:path", get(read_file))
+        .route("/stream/:path", get(stream_to_body))
 }
 
 #[tokio::main]
@@ -92,4 +146,5 @@ mod tests {
 
     test_static_files!(serve_dir, "/serve_dir");
     test_static_files!(read, "/read");
+    test_static_files!(stream, "/stream");
 }
