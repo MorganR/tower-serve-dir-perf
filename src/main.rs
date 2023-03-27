@@ -1,6 +1,6 @@
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use axum::{Router, routing::get, response::IntoResponse};
+use axum::{response::IntoResponse, routing::get, Router};
 
 async fn hello_world() -> impl IntoResponse {
     String::from("Hello, world!")
@@ -8,8 +8,7 @@ async fn hello_world() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .route("/hello", get(hello_world));
+    let app = Router::new().route("/hello", get(hello_world));
 
     const PORT: u16 = 8080;
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), PORT);
