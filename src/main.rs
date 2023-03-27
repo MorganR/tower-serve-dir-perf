@@ -1,19 +1,32 @@
 use std::{
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
 };
 
-use axum::{response::IntoResponse, routing::get, Router, Server};
+use axum::{extract::Path, response::IntoResponse, routing::get, Router, Server};
+use hyper::StatusCode;
 use tower_http::services::ServeDir;
 
 async fn hello_world() -> impl IntoResponse {
     String::from("Hello, world!")
 }
 
+async fn read_file(Path(relative_path): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    let mut path = PathBuf::from("static");
+    path.push(&relative_path);
+    let result = tokio::fs::read(&path).await;
+    match result {
+        Ok(bytes) => Ok(bytes),
+        Err(_) => Err(StatusCode::NOT_FOUND),
+    }
+}
+
 fn create_router() -> Router {
     Router::new()
         .route("/hello", get(hello_world))
         .nest_service("/serve_dir", ServeDir::new("static"))
+        .route("/read/:path", get(read_file))
 }
 
 #[tokio::main]
@@ -75,4 +88,5 @@ mod tests {
     }
 
     test_static_files!(serve_dir, "/serve_dir");
+    test_static_files!(read, "/read");
 }
