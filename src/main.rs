@@ -1,10 +1,9 @@
-use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, error::Error};
-
-use axum::{
-    response::IntoResponse,
-    routing::get,
-    Router, Server,
+use std::{
+    error::Error,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
+
+use axum::{response::IntoResponse, routing::get, Router, Server};
 use tower_http::services::ServeDir;
 
 async fn hello_world() -> impl IntoResponse {
@@ -32,6 +31,7 @@ mod tests {
     use super::*;
 
     use axum_test::TestServer;
+    use paste::paste;
 
     #[tokio::test]
     async fn hello() {
@@ -42,25 +42,37 @@ mod tests {
         assert_eq!(response.text(), "Hello, world!");
     }
 
-    #[tokio::test]
-    async fn serve_dir_basic_html() -> Result<(), Box<dyn Error>> {
-        let server = TestServer::new(create_router().into_make_service()).unwrap();
+    macro_rules! test_static_files {
+        ($prefix:ident, $base_path:expr) => {
+            paste! {
+            #[tokio::test]
+                async fn [<$prefix _basic_html>]() -> Result<(), Box<dyn Error>> {
+                    let server = TestServer::new(create_router().into_make_service()).unwrap();
 
-        let response = server.get("/serve_dir/basic.html").await;
+                    let path = format!("{}/basic.html", $base_path);
+                    let response = server.get(&path).await;
 
-        let expected = tokio::fs::read("static/basic.html").await?;
-        assert_eq!(response.bytes(), expected);
-        Ok(())
+                    let expected = tokio::fs::read("static/basic.html").await?;
+                    assert_eq!(response.bytes(), expected);
+                    Ok(())
+                }
+            }
+
+            paste! {
+                #[tokio::test]
+                async fn [<$prefix _scout_webp>]() -> Result<(), Box<dyn Error>> {
+                    let server = TestServer::new(create_router().into_make_service()).unwrap();
+
+                        let path = format!("{}/scout.webp", $base_path);
+                    let response = server.get(&path).await;
+
+                    let expected = tokio::fs::read("static/scout.webp").await?;
+                    assert_eq!(response.bytes(), expected);
+                    Ok(())
+                }
+            }
+        };
     }
 
-    #[tokio::test]
-    async fn serve_dir_scout_webp() -> Result<(), Box<dyn Error>> {
-        let server = TestServer::new(create_router().into_make_service()).unwrap();
-
-        let response = server.get("/serve_dir/scout.webp").await;
-
-        let expected = tokio::fs::read("static/scout.webp").await?;
-        assert_eq!(response.bytes(), expected);
-        Ok(())
-    }
+    test_static_files!(serve_dir, "/serve_dir");
 }
