@@ -12,6 +12,9 @@ async fn hello_world() -> impl IntoResponse {
     String::from("Hello, world!")
 }
 
+/// Performs a naive read of the file at the given path into memory, then returns that data.
+///
+/// Returns NOT_FOUND on any error.
 async fn read_file(Path(relative_path): Path<String>) -> Result<impl IntoResponse, StatusCode> {
     let mut path = PathBuf::from("static");
     path.push(&relative_path);
