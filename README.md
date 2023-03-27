@@ -13,5 +13,3 @@ Then run the benchmarking script (requires `wrk` to be installed).
 ```shell
 $ ./bench.sh
 ```
-
-The results can be found in `./results.txt`.
