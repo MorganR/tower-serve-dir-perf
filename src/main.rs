@@ -1,9 +1,10 @@
 use std::{
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
-    pin::{pin, Pin},
-    task::{Context, Poll},
+    pin::Pin,
+    task::{Context, Poll, Waker},
+    thread,
+    time::Duration,
 };
 
 use axum::{
@@ -13,41 +14,37 @@ use axum::{
     routing::get,
     Router, Server,
 };
-use bytes::BytesMut;
-use futures_core::stream::Stream;
 use http_body::Body;
 use hyper::{HeaderMap, StatusCode};
-use pin_project::pin_project;
-use tokio::{
-    fs::File,
-    io,
-};
-use tokio_stream::StreamExt;
-use tokio_util::io::ReaderStream;
-use tower_http::services::ServeDir;
+use tokio::io;
 
-async fn hello_world() -> impl IntoResponse {
-    String::from("Hello, world!")
+/// Writes a number of lines of output all at once.
+async fn single(Path(n): Path<usize>) -> Result<impl IntoResponse, StatusCode> {
+    let mut response: Vec<String> = Vec::with_capacity(n);
+    for i in 1..=n {
+        response.push(format!("Hello {}", i));
+    }
+    Ok(response.join("\n"))
 }
 
-/// Performs a naive read of the file at the given path into memory, then returns that data.
-///
-/// Returns NOT_FOUND on any error.
-async fn read_file(Path(relative_path): Path<String>) -> Result<impl IntoResponse, StatusCode> {
-    let mut path = PathBuf::from("static");
-    path.push(&relative_path);
-    let result = tokio::fs::read(&path).await;
-    match result {
-        Ok(bytes) => Ok(bytes),
-        Err(_) => Err(StatusCode::NOT_FOUND),
+/// A streaming body response, that sends a number of lines of text.
+struct DelayedBody {
+    n: usize,
+    current: usize,
+    waker: Option<Waker>,
+}
+
+impl DelayedBody {
+    fn new(n: usize) -> Self {
+        DelayedBody {
+            n,
+            current: 0,
+            waker: None,
+        }
     }
 }
 
-/// A streaming body response, based on AsyncReadBody from tower.
-#[pin_project]
-struct BodyStream(#[pin] pub ReaderStream<File>);
-
-impl Body for BodyStream {
+impl Body for DelayedBody {
     type Data = Bytes;
     type Error = io::Error;
 
@@ -55,7 +52,28 @@ impl Body for BodyStream {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.project().0.poll_next(cx)
+        if self.current == self.n {
+            return Poll::Ready(None);
+        }
+        if let Some(_) = self.waker {
+            let with_new_line = self.current < self.n - 1;
+            let self_mut = self.get_mut();
+            self_mut.waker = None;
+            self_mut.current += 1;
+            return Poll::Ready(Some(Ok(Bytes::from(match with_new_line {
+                true => format!("Hello {}\n", self_mut.current),
+                false => format!("Hello {}", self_mut.current),
+            }))));
+        }
+
+        let waker = cx.waker().clone();
+        self.get_mut().waker = Some(waker.clone());
+
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(1));
+            waker.wake();
+        });
+        Poll::Pending
     }
 
     fn poll_trailers(
@@ -66,50 +84,18 @@ impl Body for BodyStream {
     }
 }
 
-/// Opens the file with tokio, then uses ReaderStream from tokio-util to build the response.
-///
-/// Returns NOT_FOUND on any error.
-async fn stream_to_body(
-    Path(relative_path): Path<String>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let mut path = PathBuf::from("static");
-    path.push(&relative_path);
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(|_err| StatusCode::NOT_FOUND)?;
-    let body = BodyStream(ReaderStream::with_capacity(file, 64 << 10));
+/// Writes a number of lines of output via polling a Body.
+async fn body(Path(n): Path<usize>) -> Result<impl IntoResponse, StatusCode> {
+    let simple_body = DelayedBody::new(n);
     Response::builder()
-        .body(body)
-        .map_err(|_err| StatusCode::NOT_FOUND)
-}
-
-/// Opens the file with tokio, then uses a ReaderStream to read its contents to a single buffer.
-///
-/// Returns NOT_FOUND on any error.
-async fn read_async(Path(relative_path): Path<String>) -> Result<impl IntoResponse, StatusCode> {
-    let mut path = PathBuf::from("static");
-    path.push(&relative_path);
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(|_err| StatusCode::NOT_FOUND)?;
-    const BUF_LEN: usize = 64 << 10;
-    let reader = ReaderStream::with_capacity(file, BUF_LEN);
-    let results = reader
-        .fold(BytesMut::with_capacity(BUF_LEN), |mut acc, b| {
-            acc.extend(b.expect("error during stream"));
-            acc
-        })
-        .await;
-    Ok(results)
+        .body(simple_body)
+        .map_err(|_err| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 fn create_router() -> Router {
     Router::new()
-        .route("/hello", get(hello_world))
-        .nest_service("/serve_dir", ServeDir::new("static"))
-        .route("/read/:path", get(read_file))
-        .route("/stream/:path", get(stream_to_body))
-        .route("/read_async/:path", get(read_async))
+        .route("/single/:n", get(single))
+        .route("/body/:n", get(body))
 }
 
 #[tokio::main]
@@ -129,49 +115,36 @@ mod tests {
     use axum_test::TestServer;
     use paste::paste;
 
-    #[tokio::test]
-    async fn hello() {
-        let server = TestServer::new(create_router().into_make_service()).unwrap();
-
-        let response = server.get("/hello").await;
-
-        assert_eq!(response.text(), "Hello, world!");
-    }
-
-    macro_rules! test_static_files {
+    macro_rules! test_lines {
         ($prefix:ident, $base_path:expr) => {
             paste! {
             #[tokio::test]
-                async fn [<$prefix _basic_html>]() -> Result<(), Box<dyn Error>> {
+                async fn [<$prefix _zero_lines>]() -> Result<(), Box<dyn Error>> {
                     let server = TestServer::new(create_router().into_make_service()).unwrap();
 
-                    let path = format!("{}/basic.html", $base_path);
+                    let path = format!("{}/0", $base_path);
                     let response = server.get(&path).await;
 
-                    let expected = tokio::fs::read("static/basic.html").await?;
-                    assert_eq!(response.bytes(), expected);
+                    assert_eq!(response.text(), "");
                     Ok(())
                 }
             }
 
             paste! {
                 #[tokio::test]
-                async fn [<$prefix _scout_webp>]() -> Result<(), Box<dyn Error>> {
+                async fn [<$prefix _some_lines>]() -> Result<(), Box<dyn Error>> {
                     let server = TestServer::new(create_router().into_make_service()).unwrap();
 
-                        let path = format!("{}/scout.webp", $base_path);
+                    let path = format!("{}/3", $base_path);
                     let response = server.get(&path).await;
 
-                    let expected = tokio::fs::read("static/scout.webp").await?;
-                    assert_eq!(response.bytes(), expected);
+                    assert_eq!(response.text(), "Hello 1\nHello 2\nHello 3");
                     Ok(())
                 }
             }
         };
     }
 
-    test_static_files!(serve_dir, "/serve_dir");
-    test_static_files!(read, "/read");
-    test_static_files!(stream, "/stream");
-    test_static_files!(read_async, "/read_async");
+    test_lines!(single, "/single");
+    test_lines!(body, "/body");
 }
