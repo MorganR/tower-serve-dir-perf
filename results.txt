@@ -1,49 +1,65 @@
 Running 10s test @ http://localhost:8080/serve_dir/basic.html
   1 threads and 1 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    49.79ms    5.12ms  60.31ms   96.02%
-    Req/Sec    20.01      2.68    30.00     93.00%
-  201 requests in 10.04s, 95.37KB read
-Requests/sec:     20.03
-Transfer/sec:      9.50KB
+    Latency    49.78ms    5.15ms  60.18ms   96.02%
+    Req/Sec    20.05      1.75    30.00     97.00%
+  201 requests in 10.03s, 95.37KB read
+Requests/sec:     20.05
+Transfer/sec:      9.51KB
 Running 10s test @ http://localhost:8080/read/basic.html
   1 threads and 1 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   404.02us  220.23us   6.59ms   97.28%
-    Req/Sec     2.54k   268.24     2.99k    63.00%
-  25278 requests in 10.00s, 10.41MB read
-Requests/sec:   2527.59
-Transfer/sec:      1.04MB
+    Latency   193.36us   58.86us   4.04ms   91.37%
+    Req/Sec     5.19k   468.23     5.90k    74.26%
+  52151 requests in 10.10s, 21.49MB read
+Requests/sec:   5163.47
+Transfer/sec:      2.13MB
 Running 10s test @ http://localhost:8080/stream/basic.html
   1 threads and 1 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    49.90ms    3.71ms  60.25ms   98.00%
-    Req/Sec    19.98      1.43    30.00     98.00%
-  200 requests in 10.02s, 80.36KB read
-Requests/sec:     19.96
-Transfer/sec:      8.02KB
+    Latency    50.11ms    4.08ms  60.35ms   95.00%
+    Req/Sec    19.89      3.19    30.00     90.00%
+  200 requests in 10.04s, 80.36KB read
+Requests/sec:     19.93
+Transfer/sec:      8.01KB
+Running 10s test @ http://localhost:8080/read_async/basic.html
+  1 threads and 1 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   381.90us   57.83us   1.60ms   88.65%
+    Req/Sec     2.63k   157.39     2.89k    75.25%
+  26391 requests in 10.10s, 10.87MB read
+Requests/sec:   2612.99
+Transfer/sec:      1.08MB
 Running 10s test @ http://localhost:8080/serve_dir/scout.webp
   1 threads and 1 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    37.74ms   21.16ms  59.90ms   74.34%
-    Req/Sec    26.43     65.01   670.00     99.00%
-  265 requests in 10.03s, 8.51MB read
-Requests/sec:     26.41
-Transfer/sec:    868.52KB
+    Latency    48.95ms    7.79ms  60.06ms   95.59%
+    Req/Sec    20.40      5.11    70.00     98.00%
+  204 requests in 10.02s, 6.55MB read
+Requests/sec:     20.36
+Transfer/sec:    669.41KB
 Running 10s test @ http://localhost:8080/read/scout.webp
   1 threads and 1 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   441.37us  360.44us  10.72ms   97.88%
-    Req/Sec     2.39k   318.16     2.87k    66.34%
-  23977 requests in 10.10s, 768.69MB read
-Requests/sec:   2374.09
-Transfer/sec:     76.11MB
+    Latency   213.40us  122.23us   7.14ms   96.49%
+    Req/Sec     4.77k   525.14     5.51k    74.26%
+  47879 requests in 10.10s, 1.50GB read
+Requests/sec:   4740.70
+Transfer/sec:    151.99MB
 Running 10s test @ http://localhost:8080/stream/scout.webp
   1 threads and 1 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    48.94ms    8.62ms  60.06ms   92.65%
-    Req/Sec    20.33      2.84    40.00     95.00%
-  204 requests in 10.03s, 6.54MB read
-Requests/sec:     20.33
-Transfer/sec:    667.13KB
+    Latency    22.88ms   20.03ms  60.14ms   28.70%
+    Req/Sec    48.38     72.42   484.00     94.00%
+  484 requests in 10.03s, 15.51MB read
+Requests/sec:     48.26
+Transfer/sec:      1.55MB
+Running 10s test @ http://localhost:8080/read_async/scout.webp
+  1 threads and 1 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   764.53us  360.31us   2.98ms   84.86%
+    Req/Sec     1.34k   469.82     1.92k    58.00%
+  13381 requests in 10.00s, 428.99MB read
+Requests/sec:   1337.81
+Transfer/sec:     42.89MB
 Done
