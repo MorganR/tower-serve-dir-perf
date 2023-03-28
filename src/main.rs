@@ -2,9 +2,7 @@ use std::{
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     pin::Pin,
-    task::{Context, Poll, Waker},
-    thread,
-    time::Duration,
+    task::{Context, Poll},
 };
 
 use axum::{
@@ -31,10 +29,50 @@ async fn single(Path(n): Path<usize>) -> Result<impl IntoResponse, StatusCode> {
 struct SimpleBody {
     n: usize,
     current: usize,
-    is_pending: bool,
 }
 
 impl SimpleBody {
+    fn new(n: usize) -> Self {
+        Self { n, current: 0 }
+    }
+}
+
+impl Body for SimpleBody {
+    type Data = Bytes;
+    type Error = io::Error;
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        if self.current == self.n {
+            return Poll::Ready(None);
+        }
+        let with_new_line = self.current < self.n - 1;
+        let self_mut = self.get_mut();
+        self_mut.current += 1;
+        Poll::Ready(Some(Ok(Bytes::from(match with_new_line {
+            true => format!("Hello {}\n", self_mut.current),
+            false => format!("Hello {}", self_mut.current),
+        }))))
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+        Poll::Ready(Ok(None))
+    }
+}
+
+/// A streaming body response, that sends a number of lines of text, with one Pending response between each line of data.
+struct DelayedBody {
+    n: usize,
+    current: usize,
+    is_pending: bool,
+}
+
+impl DelayedBody {
     fn new(n: usize) -> Self {
         Self {
             n,
@@ -44,7 +82,7 @@ impl SimpleBody {
     }
 }
 
-impl Body for SimpleBody {
+impl Body for DelayedBody {
     type Data = Bytes;
     type Error = io::Error;
 
@@ -68,63 +106,6 @@ impl Body for SimpleBody {
 
         self.get_mut().is_pending = false;
         cx.waker().wake_by_ref();
-        Poll::Pending
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        Poll::Ready(Ok(None))
-    }
-}
-
-/// A streaming body response, that sends a number of lines of text, with a 1ms pause between each.
-struct DelayedBody {
-    n: usize,
-    current: usize,
-    waker: Option<Waker>,
-}
-
-impl DelayedBody {
-    fn new(n: usize) -> Self {
-        Self {
-            n,
-            current: 0,
-            waker: None,
-        }
-    }
-}
-
-impl Body for DelayedBody {
-    type Data = Bytes;
-    type Error = io::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        if self.current == self.n {
-            return Poll::Ready(None);
-        }
-        if let Some(_) = self.waker {
-            let with_new_line = self.current < self.n - 1;
-            let self_mut = self.get_mut();
-            self_mut.waker = None;
-            self_mut.current += 1;
-            return Poll::Ready(Some(Ok(Bytes::from(match with_new_line {
-                true => format!("Hello {}\n", self_mut.current),
-                false => format!("Hello {}", self_mut.current),
-            }))));
-        }
-
-        let waker = cx.waker().clone();
-        self.get_mut().waker = Some(waker.clone());
-
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(1));
-            waker.wake();
-        });
         Poll::Pending
     }
 
