@@ -83,7 +83,7 @@ async fn stream_to_body(
         .map_err(|_err| StatusCode::NOT_FOUND)
 }
 
-/// Opens the file with tokio, then uses AsyncReadExt tools to write it to the output.
+/// Opens the file with tokio, then uses a ReaderStream to read its contents to a single buffer.
 ///
 /// Returns NOT_FOUND on any error.
 async fn read_async(Path(relative_path): Path<String>) -> Result<impl IntoResponse, StatusCode> {
