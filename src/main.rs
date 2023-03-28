@@ -28,6 +28,58 @@ async fn single(Path(n): Path<usize>) -> Result<impl IntoResponse, StatusCode> {
 }
 
 /// A streaming body response, that sends a number of lines of text.
+struct SimpleBody {
+    n: usize,
+    current: usize,
+    is_pending: bool,
+}
+
+impl SimpleBody {
+    fn new(n: usize) -> Self {
+        Self {
+            n,
+            current: 0,
+            is_pending: true,
+        }
+    }
+}
+
+impl Body for SimpleBody {
+    type Data = Bytes;
+    type Error = io::Error;
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        if self.current == self.n {
+            return Poll::Ready(None);
+        }
+        if !self.is_pending {
+            let with_new_line = self.current < self.n - 1;
+            let self_mut = self.get_mut();
+            self_mut.is_pending = true;
+            self_mut.current += 1;
+            return Poll::Ready(Some(Ok(Bytes::from(match with_new_line {
+                true => format!("Hello {}\n", self_mut.current),
+                false => format!("Hello {}", self_mut.current),
+            }))));
+        }
+
+        self.get_mut().is_pending = false;
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+        Poll::Ready(Ok(None))
+    }
+}
+
+/// A streaming body response, that sends a number of lines of text, with a 1ms pause between each.
 struct DelayedBody {
     n: usize,
     current: usize,
@@ -36,7 +88,7 @@ struct DelayedBody {
 
 impl DelayedBody {
     fn new(n: usize) -> Self {
-        DelayedBody {
+        Self {
             n,
             current: 0,
             waker: None,
@@ -86,9 +138,17 @@ impl Body for DelayedBody {
 
 /// Writes a number of lines of output via polling a Body.
 async fn body(Path(n): Path<usize>) -> Result<impl IntoResponse, StatusCode> {
-    let simple_body = DelayedBody::new(n);
+    let simple_body = SimpleBody::new(n);
     Response::builder()
         .body(simple_body)
+        .map_err(|_err| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// Writes a number of lines of output via polling a delayed body.
+async fn delayed_body(Path(n): Path<usize>) -> Result<impl IntoResponse, StatusCode> {
+    let body = DelayedBody::new(n);
+    Response::builder()
+        .body(body)
         .map_err(|_err| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
@@ -96,6 +156,7 @@ fn create_router() -> Router {
     Router::new()
         .route("/single/:n", get(single))
         .route("/body/:n", get(body))
+        .route("/delayed_body/:n", get(delayed_body))
 }
 
 #[tokio::main]
@@ -147,4 +208,5 @@ mod tests {
 
     test_lines!(single, "/single");
     test_lines!(body, "/body");
+    test_lines!(delayed_body, "/delayed_body");
 }
