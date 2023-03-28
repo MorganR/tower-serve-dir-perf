@@ -24,4 +24,7 @@ On my machine, `/read` returns in about 0.5ms on average, whereas the others tak
 
 ## Experiments
 
-- Tried setting the capacity to the length of the file, instead of to 64kB.
+- Tried setting the capacity of the `ReaderStream` to the length of the file, instead of to 64kB. No change.
+- Tried using `AsyncReadExt::read_to_end` with a vec. This had similar performance to `read` (< 2x).
+- Tried using `AsyncReadExt::read` to repeatedly read into a vec buffer. This had similar performance to above (~ 2x `read`).
+- Tried using `AsyncReadExt::read` to repeatedly read into a vec buffer. This had similar performance to above (~ 2x `read`).

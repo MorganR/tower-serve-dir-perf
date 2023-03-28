@@ -13,12 +13,17 @@ use axum::{
     routing::get,
     Router, Server,
 };
+use bytes::BytesMut;
 use futures_core::stream::Stream;
 use http_body::Body;
 use hyper::{HeaderMap, StatusCode};
 use pin_project::pin_project;
-use tokio::{fs::File, io};
+use tokio::{
+    fs::File,
+    io::{self, AsyncReadExt},
+};
 use tokio_util::io::ReaderStream;
+use tokio_stream::StreamExt;
 use tower_http::services::ServeDir;
 
 async fn hello_world() -> impl IntoResponse {
@@ -78,12 +83,39 @@ async fn stream_to_body(
         .map_err(|_err| StatusCode::NOT_FOUND)
 }
 
+/// Opens the file with tokio, then uses AsyncReadExt tools to write it to the output.
+///
+/// Returns NOT_FOUND on any error.
+async fn read_async(Path(relative_path): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    let mut path = PathBuf::from("static");
+    path.push(&relative_path);
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|_err| StatusCode::NOT_FOUND)?;
+    const BUF_LEN: usize = 64 << 10;
+    let mut raw_buf = Vec::with_capacity(BUF_LEN);
+    raw_buf.resize(BUF_LEN, 0);
+    let mut buf = raw_buf.as_mut_slice();
+    let mut size = 0;
+    loop { 
+        let n = file.read(&mut buf).await.map_err(|_| StatusCode::NOT_FOUND)?;
+        if n == 0 {
+            break;
+        }
+        size += n;
+        buf = &mut buf[n..];
+    }
+    raw_buf.truncate(size);
+    Ok(raw_buf)
+}
+
 fn create_router() -> Router {
     Router::new()
         .route("/hello", get(hello_world))
         .nest_service("/serve_dir", ServeDir::new("static"))
         .route("/read/:path", get(read_file))
         .route("/stream/:path", get(stream_to_body))
+        .route("/read_async/:path", get(read_async))
 }
 
 #[tokio::main]
@@ -147,4 +179,5 @@ mod tests {
     test_static_files!(serve_dir, "/serve_dir");
     test_static_files!(read, "/read");
     test_static_files!(stream, "/stream");
+    test_static_files!(read_async, "/read_async");
 }
